@@ -1,0 +1,34 @@
+:root { font-family: system-ui, sans-serif; color: #2b2118; background: #f6efe3; }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+h1 { font-family: Georgia, serif; margin: 0; font-size: 2.2rem; }
+h2 { font-family: Georgia, serif; font-size: 1.2rem; margin: 18px 0 8px; }
+.sub { margin: 4px 0 12px; color: #5b4a3a; }
+a { color: #8a4b12; }
+.status { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: #fffaf2; border: 1px solid #e0d2bc; border-radius: 10px; padding: 10px 14px; }
+.status div { display: flex; flex-direction: column; min-width: 90px; }
+.status span { font-size: .75rem; color: #7a6650; text-transform: uppercase; }
+.status b { font-size: 1.15rem; }
+button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid #b99c75; background: #fff; cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+.primary { margin-left: auto; background: #8a4b12; color: #fff; border-color: #8a4b12; }
+.danger { background: #a12a1f; color: #fff; border-color: #a12a1f; margin-top: 8px; }
+.msg { background: #fff3cd; border: 1px solid #e8d48a; padding: 6px 10px; border-radius: 8px; }
+.towns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+.town { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 10px; }
+.town.here { border: 2px solid #8a4b12; background: #fff3e0; opacity: 1; }
+.town small { color: #6d5a45; }
+table { width: 100%; border-collapse: collapse; background: #fffaf2; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eadcc6; }
+.btns { display: flex; gap: 6px; }
+.qty input { width: 60px; margin-left: 6px; }
+.qty { display: block; margin-bottom: 8px; }
+.hint { color: #5b4a3a; font-style: italic; }
+.invest { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: .9rem; }
+.cols { display: grid; grid-template-columns: 1fr 1.4fr; gap: 18px; }
+.log { list-style: none; padding: 0; margin: 0; font-size: .9rem; }
+.log li { padding: 3px 0; border-bottom: 1px dashed #e3d4bd; }
+.log small, ol small { color: #8b7660; }
+.me { font-weight: 700; }
+footer { margin-top: 24px; font-size: .8rem; color: #7a6650; }
+@media (max-width: 700px) { .towns, .cols { grid-template-columns: 1fr; } }
+.town.here:disabled { opacity: 1; }
