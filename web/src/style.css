@@ -32,3 +32,12 @@ th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eadcc6; }
 footer { margin-top: 24px; font-size: .8rem; color: #7a6650; }
 @media (max-width: 700px) { .towns, .cols { grid-template-columns: 1fr; } }
 .town.here:disabled { opacity: 1; }
+.modes { display: flex; gap: 6px; margin: 6px 0; }
+.modes .on { background: #8a4b12; color: #fff; border-color: #8a4b12; }
+.small { font-size: .85rem; }
+.guest { background: #fffaf2; border: 1px dashed #b99c75; border-radius: 10px; padding: 10px 14px; }
+.guest .primary { margin-left: 0; }
+.acct { font-size: .9rem; }
+.link { border: none; background: none; padding: 0; color: #8a4b12; text-decoration: underline; }
+.clock { margin-left: auto; }
+.road { background: #e9f1fb; border: 1px solid #b7cde6; padding: 6px 10px; border-radius: 8px; }

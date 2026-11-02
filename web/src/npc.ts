@@ -1,7 +1,7 @@
 // Rival traders. Each NPC looks at public quotes, picks one action, and says a line
 // about it. Rule-based on purpose: deterministic, free, and easy to explain to judges.
-// The same policies can drive testnet accounts (see scripts/npc-testnet.ts, not run yet).
-import { GOODS, TOWNS, TRAVEL_COST, buyCost, demand, sellRevenue } from "./pricing";
+// The same policies can drive testnet accounts (scripts/npc-testnet.ts replays each decision as a signed testnet transaction).
+import { CART_CAPACITY, GOODS, TOWNS, TRAVEL_COST, buyCost, demand, sellRevenue } from "./pricing";
 import type { Sim } from "./sim";
 
 export type Persona = "hauler" | "investor" | "drifter";
@@ -33,7 +33,7 @@ export function bestRoute(sim: Sim, from: number, budget: number): Plan | null {
     for (let to = 0; to < TOWNS.length; to++) {
       if (to === from) continue;
       const there = sim.getMerchant(to);
-      for (const qty of [3, 5, 10, 20]) {
+      for (const qty of [3, 5, 10, 15, 20].filter((q) => q <= CART_CAPACITY)) {
         const cost = buyCost(g, here.stock[g], demand(day, from, g), qty);
         if (cost === null || cost + TRAVEL_COST > budget) continue;
         const profit = sellRevenue(g, there.stock[g], demand(day, to, g), qty) - cost - TRAVEL_COST;
@@ -54,6 +54,7 @@ export function npcTurn(sim: Sim, npc: Npc): string {
     sim.events.push({ day: sim.day(), who: npc.id, kind: "say", text: line });
     return line;
   };
+  if (sim.day() < p.arrives_day) return `${npc.name} is on the road to ${TOWNS[p.town]}.`;
   try {
     // Carrying goods? Sell them where they fetch the most (travel first if needed).
     const held = p.goods.findIndex((n) => n > 0);
@@ -64,7 +65,9 @@ export function npcTurn(sim: Sim, npc: Npc): string {
         const rev = sellRevenue(held, sim.getMerchant(t).stock[held], demand(day, t, held), p.goods[held]) - (t === p.town ? 0 : TRAVEL_COST);
         if (rev > bestRev) { bestRev = rev; bestT = t; }
       }
-      if (bestT !== p.town) { sim.travel(npc.id, bestT); return say("travel", { town: TOWNS[bestT] }); }
+      const hereRev = sellRevenue(held, sim.getMerchant(p.town).stock[held], demand(day, p.town, held), p.goods[held]);
+      // Only move on if it beats selling here by a clear margin; stops NPCs bouncing between towns as demand drifts.
+      if (bestT !== p.town && bestRev > hereRev * 1.1) { sim.travel(npc.id, bestT); return say("travel", { town: TOWNS[bestT] }); }
       const before = sim.getPlayer(npc.id)!.coins;
       sim.sell(npc.id, GOODS[held], p.goods[held], 0);
       return say("sell", { qty: p.goods[held], good: GOODS[held], town: TOWNS[p.town], amt: sim.getPlayer(npc.id)!.coins - before });

@@ -4,13 +4,13 @@
 //  3. NPC rival traders (npc.ts) that run against either backend.
 // Rules and error messages are kept identical to the contract.
 import {
-  BUY_MARKUP_PCT, GOODS, INVESTOR_SHARE_PCT, MAX_QTY, RESTART_COINS, SELL_MARKDOWN_PCT,
+  BUY_MARKUP_PCT, CART_CAPACITY, GOODS, TRAVEL_DAYS, INVESTOR_SHARE_PCT, MAX_QTY, RESTART_COINS, SELL_MARKDOWN_PCT,
   START_COINS, TARGET, TOWNS, TRAVEL_COST, buyCost, demand, investedTarget, mid, restock, sellRevenue,
 } from "./pricing";
 
 const ACC = 1_000_000_000_000n;
 
-export interface Player { coins: number; goods: number[]; town: number; bankruptcies: number; trades: number; joined_day: number }
+export interface Player { coins: number; goods: number[]; town: number; bankruptcies: number; trades: number; joined_day: number; arrives_day: number }
 export interface Merchant { stock: number[]; last_day: number; invested: number; acc_per_share: bigint; house_profit: number }
 export interface Quote { town: number; good: string; stock: number; demand_pct: number; mid: number; buy_one: number; sell_one: number }
 export interface GameEvent { day: number; who: string; kind: string; text: string }
@@ -46,7 +46,7 @@ export class Sim {
 
   join(who: string) {
     require(!this.players.has(who), "already joined");
-    const p: Player = { coins: START_COINS, goods: [0, 0, 0, 0], town: 0, bankruptcies: 0, trades: 0, joined_day: this.today };
+    const p: Player = { coins: START_COINS, goods: [0, 0, 0, 0], town: 0, bankruptcies: 0, trades: 0, joined_day: this.today, arrives_day: this.today };
     this.players.set(who, p);
     this.log(who, "join", `${who} opened a stall in ${TOWNS[0]}`);
     return structuredClone(p);
@@ -56,13 +56,15 @@ export class Sim {
     const p = this.player(who);
     require(p.town !== town, "already there");
     require(p.coins >= TRAVEL_COST, "not enough coins to travel");
-    p.coins -= TRAVEL_COST; p.town = town;
+    require(this.today >= p.arrives_day, "still on the road");
+    p.coins -= TRAVEL_COST; p.town = town; p.arrives_day = this.today + TRAVEL_DAYS;
     this.log(who, "travel", `${who} travelled to ${TOWNS[town]}`);
     return structuredClone(p);
   }
   buy(who: string, good: string, qty: number, maxTotal: number) {
     require(qty > 0 && qty <= MAX_QTY, "qty 1..100");
-    const g = goodId(good), p = this.player(who), t = p.town, m = this.merchants[t];
+    const g = goodId(good), p = this.arrived(who), t = p.town, m = this.merchants[t];
+    require(p.goods.reduce((a, b) => a + b, 0) + qty <= CART_CAPACITY, `your cart holds ${CART_CAPACITY} units`);
     this.roll(t, m);
     const cost = buyCost(g, m.stock[g], demand(this.today, t, g), qty);
     require(cost !== null, "merchant is out of stock");
@@ -75,7 +77,7 @@ export class Sim {
   }
   sell(who: string, good: string, qty: number, minTotal: number) {
     require(qty > 0 && qty <= MAX_QTY, "qty 1..100");
-    const g = goodId(good), p = this.player(who);
+    const g = goodId(good), p = this.arrived(who);
     require(p.goods[g] >= qty, "you don't have that many");
     const t = p.town, m = this.merchants[t];
     this.roll(t, m);
@@ -92,12 +94,13 @@ export class Sim {
     require(amount > 0, "amount must be positive");
     const a = this.player(who), b = this.player(receiver);
     require(a.goods[g] >= amount, "insufficient balance");
+    require(b.goods.reduce((x, y) => x + y, 0) + amount <= CART_CAPACITY, "receiver's cart is full");
     a.goods[g] -= amount; b.goods[g] += amount;
     this.log(who, "transfer", `${who} gave ${amount} ${good} to ${receiver}`);
   }
   invest(who: string, amount: number) {
     require(amount > 0, "amount must be positive");
-    const p = this.player(who);
+    const p = this.arrived(who);
     require(p.coins >= amount, "not enough coins");
     const t = p.town; this.claimInner(who, t, p);
     const m = this.merchants[t], key = `${who}|${t}`;
@@ -108,7 +111,7 @@ export class Sim {
     return st.amount;
   }
   divest(who: string, town: number) {
-    const p = this.player(who);
+    const p = this.arrived(who);
     require(p.town === town, "travel to that town to divest");
     this.claimInner(who, town, p);
     const key = `${who}|${town}`, st = this.stakes.get(key);
@@ -138,6 +141,7 @@ export class Sim {
     return w;
   }
 
+  private arrived(who: string) { const p = this.player(who); require(this.today >= p.arrives_day, "still on the road"); return p; }
   private player(who: string) { const p = this.players.get(who); require(!!p, "join first"); return p!; }
   private roll(town: number, m: Merchant) {
     if (this.today > m.last_day) {

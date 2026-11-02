@@ -8,10 +8,12 @@ pub const GOODS: [&str; 4] = ["grain", "iron", "cloth", "spice"];
 pub const BASE: [u64; 4] = [100, 400, 250, 900];
 pub const TOWNS: [&str; 3] = ["Millbrook", "Ironhold", "Saltmere"];
 /// Target stock per town per good: each town over-produces something.
+/// Spreads are kept modest (about 1.3x between the cheapest and dearest town) so that
+/// income grows linearly with play rather than running away; see web/scripts/balance.ts.
 pub const TARGET: [[u64; 4]; 3] = [
-    [240, 90, 110, 40], // Millbrook: grain town
-    [150, 180, 100, 50], // Ironhold: mines
-    [160, 100, 190, 80], // Saltmere: port, cloth and spice arrive by sea
+    [200, 100, 115, 55], // Millbrook: grain town
+    [150, 130, 110, 60], // Ironhold: mines
+    [160, 105, 140, 70], // Saltmere: port, cloth and spice arrive by sea
 ];
 /// Reference stock per good: a merchant holding this much charges the base price.
 /// Towns that hold more are cheap, towns that hold less are dear; that gap is the trade route.
@@ -20,15 +22,15 @@ pub const BUY_MARKUP_PCT: u64 = 105; // player pays mid * 1.05
 pub const SELL_MARKDOWN_PCT: u64 = 95; // player receives mid * 0.95
 pub const MAX_QTY: u32 = 100;
 
-/// Town demand for a good on a given game day, 80..=130 (% of normal).
-/// sha256("rb" ‖ day as u64 LE ‖ town ‖ good)[0] % 51 + 80
+/// Town demand for a good on a given game day, 90..=115 (% of normal).
+/// sha256("rb" ‖ day as u64 LE ‖ town ‖ good)[0] % 26 + 90
 pub fn demand(day: u64, town: u8, good: u8) -> u64 {
     let mut msg = b"rb".to_vec();
     msg.extend_from_slice(&day.to_le_bytes());
     msg.push(town);
     msg.push(good);
     let h = env::sha256(&msg);
-    80 + (h[0] as u64 % 51)
+    90 + (h[0] as u64 % 26)
 }
 
 /// Mid price in coppers for one unit, given the merchant's current stock.
@@ -143,7 +145,7 @@ mod tests {
             for t in 0..3 {
                 for g in 0..4 {
                     let x = demand(d, t, g);
-                    assert!((80..=130).contains(&x));
+                    assert!((90..=115).contains(&x));
                 }
             }
         }

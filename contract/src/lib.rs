@@ -16,6 +16,8 @@ use pricing::*;
 const START_COINS: u64 = 1000;
 const RESTART_COINS: u64 = 600;
 const TRAVEL_COST: u64 = 30;
+const TRAVEL_DAYS: u64 = 1; // you arrive at the start of the next game day
+const CART_CAPACITY: u64 = 15; // total units of goods a player can carry
 const ACC: u128 = 1_000_000_000_000; // fixed-point scale for dividends per share
 const INVESTOR_SHARE_PCT: u64 = 50; // half of every spread goes to the merchant's investors
 
@@ -28,6 +30,8 @@ pub struct Player {
     pub bankruptcies: u32,
     pub trades: u32,
     pub joined_day: u64,
+    /// game day the player arrives in `town`; no trading while on the road
+    pub arrives_day: u64,
 }
 
 #[near(serializers = [borsh, json])]
@@ -109,7 +113,7 @@ impl Game {
         near_sdk::serde_json::json!({
             "owner": self.owner, "genesis_ns": self.genesis_ns.to_string(), "day_ns": self.day_ns.to_string(),
             "goods": GOODS, "base": BASE, "towns": TOWNS, "target": TARGET,
-            "travel_cost": TRAVEL_COST, "start_coins": START_COINS, "restart_coins": RESTART_COINS,
+            "travel_cost": TRAVEL_COST, "travel_days": TRAVEL_DAYS, "cart_capacity": CART_CAPACITY, "start_coins": START_COINS, "restart_coins": RESTART_COINS,
         })
     }
 
@@ -165,6 +169,11 @@ impl Game {
         self.stakes.get(&(account_id, town)).map(|s| s.amount).unwrap_or(0)
     }
 
+    /// Stake in each town plus pending dividends, for leaderboards: [[stake, pending]; 3].
+    pub fn get_stakes(&self, account_id: AccountId) -> Vec<(u64, u64)> {
+        (0..3u8).map(|t| (self.get_stake(account_id.clone(), t), self.pending_dividends(account_id.clone(), t))).collect()
+    }
+
     // NEP-245-style views
     pub fn mt_balance_of(&self, account_id: AccountId, token_id: String) -> U128 {
         let g = good_id(&token_id) as usize;
@@ -180,7 +189,7 @@ impl Game {
     pub fn join(&mut self) -> Player {
         let who = env::predecessor_account_id();
         require!(self.players.get(&who).is_none(), "already joined");
-        let p = Player { coins: START_COINS, goods: [0; 4], town: 0, bankruptcies: 0, trades: 0, joined_day: self.day() };
+        let p = Player { coins: START_COINS, goods: [0; 4], town: 0, bankruptcies: 0, trades: 0, joined_day: self.day(), arrives_day: self.day() };
         self.players.insert(who.clone(), p.clone());
         emit("rust_and_barter", "join", near_sdk::serde_json::json!({"account_id": who}));
         p
@@ -192,8 +201,10 @@ impl Game {
         let mut p = self.player(&who);
         require!(p.town != town, "already there");
         require!(p.coins >= TRAVEL_COST, "not enough coins to travel");
+        require!(self.day() >= p.arrives_day, "still on the road");
         p.coins -= TRAVEL_COST;
         p.town = town;
+        p.arrives_day = self.day() + TRAVEL_DAYS;
         self.players.insert(who.clone(), p.clone());
         emit("rust_and_barter", "travel", near_sdk::serde_json::json!({"account_id": who, "town": town}));
         p
@@ -204,7 +215,8 @@ impl Game {
         require!(qty > 0 && qty <= MAX_QTY, "qty 1..100");
         let g = good_id(&good);
         let who = env::predecessor_account_id();
-        let mut p = self.player(&who);
+        let mut p = self.arrived(&who);
+        require!(p.goods.iter().sum::<u64>() + qty as u64 <= CART_CAPACITY, "your cart holds 15 units");
         let t = p.town;
         let mut m = self.merchants[t as usize].clone();
         self.roll(t, &mut m);
@@ -230,7 +242,7 @@ impl Game {
         require!(qty > 0 && qty <= MAX_QTY, "qty 1..100");
         let g = good_id(&good);
         let who = env::predecessor_account_id();
-        let mut p = self.player(&who);
+        let mut p = self.arrived(&who);
         require!(p.goods[g as usize] >= qty as u64, "you don't have that many");
         let t = p.town;
         let mut m = self.merchants[t as usize].clone();
@@ -261,6 +273,7 @@ impl Game {
         let mut a = self.player(&who);
         let mut b = self.player(&receiver_id);
         require!(a.goods[g] >= amt, "insufficient balance");
+        require!(b.goods.iter().sum::<u64>() + amt <= CART_CAPACITY, "receiver's cart is full");
         a.goods[g] -= amt;
         b.goods[g] += amt;
         self.players.insert(who.clone(), a);
@@ -273,7 +286,7 @@ impl Game {
     pub fn invest(&mut self, amount: u64) -> u64 {
         require!(amount > 0, "amount must be positive");
         let who = env::predecessor_account_id();
-        let mut p = self.player(&who);
+        let mut p = self.arrived(&who);
         require!(p.coins >= amount, "not enough coins");
         let t = p.town;
         self.claim_inner(&who, t, &mut p);
@@ -293,7 +306,7 @@ impl Game {
     /// Withdraw your whole stake in `town` (plus pending dividends). Must be in that town.
     pub fn divest(&mut self, town: u8) -> u64 {
         let who = env::predecessor_account_id();
-        let mut p = self.player(&who);
+        let mut p = self.arrived(&who);
         require!(p.town == town, "travel to that town to divest");
         self.claim_inner(&who, town, &mut p);
         let st = self.stakes.remove(&(who.clone(), town)).unwrap_or_else(|| env::panic_str("no stake"));
@@ -326,6 +339,12 @@ impl Game {
     }
 
     // ---------- internals ----------
+
+    fn arrived(&self, who: &AccountId) -> Player {
+        let p = self.player(who);
+        require!(self.day() >= p.arrives_day, "still on the road");
+        p
+    }
 
     fn player(&self, who: &AccountId) -> Player {
         self.players.get(who).cloned().unwrap_or_else(|| env::panic_str("join first"))
@@ -394,6 +413,8 @@ mod tests {
         assert!(p.coins < 1000);
         let p = g.travel(1);
         assert_eq!(p.town, 1);
+        assert_eq!(p.arrives_day, 1);
+        ctx(1, 1000 + 60);
         let before = p.coins;
         let p = g.sell("grain".into(), 5, 0);
         assert!(p.coins > before, "grain should sell for more in Ironhold");
@@ -415,9 +436,9 @@ mod tests {
         ctx(1, 1000);
         g.join();
         g.buy("grain".into(), 5, 10_000);
-        assert_eq!(g.get_merchant(0).stock[0], 235);
+        assert_eq!(g.get_merchant(0).stock[0], 195);
         ctx(1, 1000 + 60 * 3);
-        assert!(g.get_merchant(0).stock[0] > 235);
+        assert!(g.get_merchant(0).stock[0] > 195);
     }
 
     #[test]
@@ -443,9 +464,11 @@ mod tests {
         ctx(1, 1000);
         g.join();
         // spend almost everything on travel
-        for i in 0..31 {
+        for i in 0..31u64 {
+            ctx(1, 1000 + 60 * i);
             g.travel(((i % 2) + 1) as u8);
         }
+        ctx(1, 1000 + 60 * 31);
         let p = g.get_player(accounts(1)).unwrap();
         assert!(p.coins < 100);
         let p = g.declare_bankruptcy();
@@ -460,6 +483,26 @@ mod tests {
         ctx(1, 1000);
         g.join();
         g.declare_bankruptcy();
+    }
+
+    #[test]
+    #[should_panic(expected = "still on the road")]
+    fn no_trading_while_travelling() {
+        let mut g = game();
+        ctx(1, 1000);
+        g.join();
+        g.travel(2);
+        g.buy("spice".into(), 1, 10_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "your cart holds 15 units")]
+    fn cart_capacity() {
+        let mut g = game();
+        ctx(1, 1000);
+        g.join();
+        g.buy("grain".into(), 10, 10_000);
+        g.buy("grain".into(), 6, 10_000);
     }
 
     #[test]

@@ -7,9 +7,9 @@ export type Good = (typeof GOODS)[number];
 export const BASE = [100, 400, 250, 900];
 export const TOWNS = ["Millbrook", "Ironhold", "Saltmere"] as const;
 export const TARGET = [
-  [240, 90, 110, 40],
-  [150, 180, 100, 50],
-  [160, 100, 190, 80],
+  [200, 100, 115, 55],
+  [150, 130, 110, 60],
+  [160, 105, 140, 70],
 ];
 export const REF = [160, 110, 120, 60];
 export const BUY_MARKUP_PCT = 105;
@@ -18,6 +18,8 @@ export const MAX_QTY = 100;
 export const START_COINS = 1000;
 export const RESTART_COINS = 600;
 export const TRAVEL_COST = 30;
+export const TRAVEL_DAYS = 1; // you arrive at the start of the next game day
+export const CART_CAPACITY = 15; // total units of goods a player can carry
 export const INVESTOR_SHARE_PCT = 50;
 
 // Integer helpers: all values stay well below 2^53, so plain numbers are exact.
@@ -30,7 +32,7 @@ export function demand(day: number, town: number, good: number): number {
   new DataView(msg.buffer).setBigUint64(2, BigInt(day), true);
   msg[10] = town;
   msg[11] = good;
-  return 80 + (sha256(msg)[0] % 51);
+  return 90 + (sha256(msg)[0] % 26);
 }
 
 export function mid(good: number, stock: number, demandPct: number): number {

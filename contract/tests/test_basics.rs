@@ -20,7 +20,7 @@ async fn trade_route_on_sandbox() -> testresult::TestResult<()> {
 
     near_api::Contract::deploy(game.account_id().clone())
         .use_code(wasm)
-        .with_init_call("new", json!({"day_seconds": 60}))?
+        .with_init_call("new", json!({"day_seconds": 10}))?
         .with_signer(signer.clone())
         .send_to(&net)
         .await?
@@ -49,6 +49,8 @@ async fn trade_route_on_sandbox() -> testresult::TestResult<()> {
     assert!(q.as_u64().unwrap() > 0, "investor should earn from Alice's trade");
 
     call!(alice, "travel", json!({"town": 1})).assert_success();
+    call!(alice, "sell", json!({"good": "grain", "qty": 10, "min_total": 0})).assert_failure(); // still on the road
+    tokio::time::sleep(std::time::Duration::from_secs(11)).await; // one 10-second game day
     call!(alice, "sell", json!({"good": "grain", "qty": 10, "min_total": 0})).assert_success();
     let p = view!("get_player", json!({"account_id": alice.account_id()}));
     let coins = p["coins"].as_u64().unwrap();
