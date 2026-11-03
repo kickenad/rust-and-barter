@@ -6,7 +6,7 @@ A small merchant-trading game whose world lives in a NEAR smart contract. There 
 
 **Testnet only.** Coins and goods are game points with no real-world value. They can't be bought, sold or withdrawn, and there is no wagering.
 
-Submitted to the NEAR hackathon (games track). Our other entry is **Usage vs Price**, a reproducible on-chain data thesis (thesis track): repo link TBD.
+Entry to the NEAR hackathon (games track). Per hackathon rule Q-015, our other (and only other) entry is **Usage vs Price**, a reproducible on-chain data thesis (thesis track): repo link TBD.
 
 ## What's on-chain
 
