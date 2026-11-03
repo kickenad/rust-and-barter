@@ -44,8 +44,14 @@ export default function App() {
   const player = useMemo(() => (guest ? new ChainPlayer(guest.accountId, guest.secret) : null), [guest]);
 
   useEffect(() => { location.hash = mode === "testnet" ? "testnet" : ""; setMsg(null); }, [mode]);
+  const lastHeight = useRef(0);
   const refresh = useCallback(async () => {
-    try { const c = cfg ?? (await getConfig()); if (!cfg) setCfg(c); setChain(await loadState(guest?.accountId ?? null, c)); }
+    try {
+      const c = cfg ?? (await getConfig()); if (!cfg) setCfg(c);
+      const st = await loadState(guest?.accountId ?? null, c);
+      // Refreshes can finish out of order; never replace a newer snapshot with an older one.
+      if (st.height >= lastHeight.current) { lastHeight.current = st.height; setChain(st); }
+    }
     catch (e) { setMsg({ text: `Could not reach testnet: ${(e as Error).message}` }); }
   }, [cfg, guest]);
   useEffect(() => {
@@ -109,7 +115,8 @@ export default function App() {
       const m = (e as Error).message;
       setMsg({ text: /price moved/.test(m) ? `${m}: prices changed before your transaction landed (often a new day). Prices are updated; check them and try again.` : m });
     }
-    setBusy(false); refresh();
+    // Read again shortly after, in case the first read came from a node that had not seen the new block yet.
+    setBusy(false); refresh(); setTimeout(refresh, 2500);
   };
   const endDay = () => act({ practice: () => { for (let i = 0; i < 2; i++) for (const n of NPCS) npcTurn(sim, n); sim.advance(1); }, method: "", done: "A new day. Merchants restocked and prices shifted." });
 
@@ -127,7 +134,8 @@ export default function App() {
       const m = (e as Error).message;
       setMsg({ text: /price moved/.test(m) ? `${m}: prices changed before your transaction landed (often a new day). Prices are updated; check them and try again.` : m });
     }
-    setBusy(false); refresh();
+    // Read again shortly after, in case the first read came from a node that had not seen the new block yet.
+    setBusy(false); refresh(); setTimeout(refresh, 2500);
   };
   const forgetGuest = () => { if (!confirm("Forget this throwaway testnet account? Its key is only stored in this browser.")) return; localStorage.removeItem(GUEST_KEY); setGuest(null); setChain(null); setTxLog([]); };
   const joinExisting = () => act({ practice: () => 0, method: "join", done: "You opened a stall in Millbrook." });

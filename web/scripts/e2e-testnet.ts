@@ -31,6 +31,8 @@ ok(b.result.goods[0] === 10 && b.result.coins < 1000, `buy 10 grain for ${1000 -
 try { await me.call("buy", { good: "grain", qty: 6, max_total: 100000 }); ok(false, "cart limit"); }
 catch (e) { ok(String((e as Error).message).includes("cart holds 15"), `cart limit enforced: "${(e as Error).message}"`); }
 
+// Travel takes one game day; leave room for the "on the road" check before the day ticks over.
+if (secondsToNextDay(cfg) < 15) await new Promise((r) => setTimeout(r, (secondsToNextDay(cfg) + 2) * 1000));
 const t = await me.call<Player>("travel", { town: 1 });
 ok(t.result.town === 1, `travel to Ironhold, arrives day ${t.result.arrives_day} (${txUrl(t.hash)})`);
 try { await me.call("sell", { good: "grain", qty: 10, min_total: 0 }); ok(false, "on the road"); }

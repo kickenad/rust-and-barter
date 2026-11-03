@@ -21,6 +21,14 @@ const unb64 = (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s), (
 const RPCS = [RPC, ...["https://rpc.testnet.fastnear.com", "https://rpc.testnet.near.org", "https://test.rpc.fastnear.com"].filter((u) => u !== RPC)];
 let rpcIdx = 0;
 export async function view<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
+  return (await viewAt<T>(method, args)).value;
+}
+
+/**
+ * A view call that also returns the block height it was evaluated at. Pass `height` to read at exactly that
+ * block, so one screen refresh never mixes state from different blocks or from a node that lags behind.
+ */
+export async function viewAt<T>(method: string, args: Record<string, unknown> = {}, height?: number): Promise<{ value: T; height: number }> {
   let lastErr: unknown;
   // Two passes over the RPC list, with a short pause between passes (rate limits reset quickly).
   for (let attempt = 0; attempt < RPCS.length * 2; attempt++) {
@@ -28,15 +36,18 @@ export async function view<T>(method: string, args: Record<string, unknown> = {}
     const url = RPCS[rpcIdx % RPCS.length];
     let j;
     try {
+      const at = height === undefined ? { finality: "optimistic" } : { block_id: height };
       const res = await fetch(url, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "call_function", finality: "optimistic", account_id: CONTRACT, method_name: method, args_base64: b64(JSON.stringify(args)) } }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "call_function", ...at, account_id: CONTRACT, method_name: method, args_base64: b64(JSON.stringify(args)) } }),
       });
       if (!res.ok) throw new Error(`RPC ${res.status}`);
       j = await res.json();
+      // A node that has not seen the block yet (or is not synced) is not an answer: try the next node.
+      if (j.error && /UNKNOWN_BLOCK|NOT_SYNCED|NO_SYNCED|GARBAGE_COLLECTED|TIMEOUT|INTERNAL/i.test(JSON.stringify(j.error))) throw new Error(`RPC ${j.error.cause?.name ?? "error"}`);
     } catch (e) { lastErr = e; rpcIdx++; continue; }
     if (j.error || j.result?.error) throw new Error(cleanError(String(j.result?.error ?? JSON.stringify(j.error))));
-    return JSON.parse(new TextDecoder().decode(new Uint8Array(j.result.result))) as T;
+    return { value: JSON.parse(new TextDecoder().decode(new Uint8Array(j.result.result))) as T, height: j.result.block_height };
   }
   throw lastErr instanceof Error ? lastErr : new Error("testnet RPC unreachable");
 }
@@ -50,7 +61,7 @@ export function cleanError(e: unknown): string {
   return s.slice(0, 200);
 }
 
-export interface ChainState { day: number; config: Config; me: Player | null; stakes: [number, number][]; merchants: Merchant[]; quotes: Quote[]; board: { id: string; worth: number; bankruptcies: number }[] }
+export interface ChainState { height: number; day: number; config: Config; me: Player | null; stakes: [number, number][]; merchants: Merchant[]; quotes: Quote[]; board: { id: string; worth: number; bankruptcies: number }[] }
 
 export const getConfig = () => view<Config>("config");
 
@@ -106,8 +117,8 @@ export async function createGuestAccount(prefix = "rb-player"): Promise<{ accoun
 // Other players' stakes only matter for leaderboard net worth, so fetch them at most once per game day,
 // a few at a time, to stay under public RPC rate limits. Your own stakes are fetched on every refresh.
 const stakeCache = new Map<string, { day: number; s: [number, number][] }>();
-async function stakesFor(ids: string[], me: string | null, day: number): Promise<[number, number][][]> {
-  const todo = ids.filter((id) => id === me || stakeCache.get(id)?.day !== day);
+async function stakesFor(ids: string[], day: number): Promise<[number, number][][]> {
+  const todo = ids.filter((id) => stakeCache.get(id)?.day !== day);
   for (let i = 0; i < todo.length; i += 4) {
     const chunk = todo.slice(i, i + 4);
     const got = await Promise.all(chunk.map((id) => view<[number, number][]>("get_stakes", { account_id: id }).catch(() => null)));
@@ -116,17 +127,30 @@ async function stakesFor(ids: string[], me: string | null, day: number): Promise
   return ids.map((id) => stakeCache.get(id)?.s ?? [[0, 0], [0, 0], [0, 0]]);
 }
 
+async function allPlayers(at: <T>(m: string, a?: Record<string, unknown>) => Promise<T>) {
+  const out: [string, Player][] = [];
+  for (let from = 0; from < 500; from += 100) {
+    const page = await at<[string, Player][]>("get_players", { from_index: from, limit: 100 });
+    out.push(...page); if (page.length < 100) break;
+  }
+  return out;
+}
+
 export async function loadState(me: string | null, cfg: Config): Promise<ChainState> {
-  const [day, merchants, players] = await Promise.all([
-    view<number>("day"),
-    Promise.all([0, 1, 2].map((town) => view<Merchant>("get_merchant", { town }))),
-    view<[string, Player][]>("get_players", { from_index: 0, limit: 50 }),
+  // Everything below is read at one block height, so the screen is a consistent snapshot.
+  const { value: day, height } = await viewAt<number>("day");
+  const at = <T,>(m: string, a: Record<string, unknown> = {}) => viewAt<T>(m, a, height).then((r) => r.value);
+  const [merchants, players, mine] = await Promise.all([
+    Promise.all([0, 1, 2].map((town) => at<Merchant>("get_merchant", { town }))),
+    allPlayers(at),
+    me ? at<Player | null>("get_player", { account_id: me }) : Promise.resolve(null),
   ]);
-  const mine = me ? players.find(([id]) => id === me)?.[1] ?? null : null;
-  // Quotes right after the player list, so they come from the same game day as `day` whenever possible.
-  const quotes = await view<Quote[]>("quotes", { town: mine?.town ?? 0 });
-  const stakesAll = await stakesFor(players.map(([id]) => id), me, day);
+  const [quotes, myStakes] = await Promise.all([
+    at<Quote[]>("quotes", { town: mine?.town ?? 0 }),
+    me ? at<[number, number][]>("get_stakes", { account_id: me }) : Promise.resolve(null),
+  ]);
+  if (me && myStakes) stakeCache.set(me, { day, s: myStakes });
+  const stakesAll = await stakesFor(players.map(([id]) => id), day);
   const board = players.map(([id, p], i) => ({ id, worth: worthOf(p, stakesAll[i], merchants, day), bankruptcies: p.bankruptcies }));
-  const myIdx = players.findIndex(([id]) => id === me);
-  return { day, config: cfg, me: mine, stakes: myIdx >= 0 ? stakesAll[myIdx] : [[0, 0], [0, 0], [0, 0]], merchants, quotes, board };
+  return { height, day, config: cfg, me: mine, stakes: myStakes ?? [[0, 0], [0, 0], [0, 0]], merchants, quotes, board };
 }
