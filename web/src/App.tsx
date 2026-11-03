@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useMemo, useReducer, useState } from "react";
-import { CART_CAPACITY, GOODS, TOWNS, TRAVEL_COST, buyCost, demand, fmt, sellRevenue } from "./pricing";
+import { CART_CAPACITY, GOODS, TOWNS, TRAVEL_COST, buyCost, fmt, sellRevenue } from "./pricing";
 import { Sim, type Player, type Quote } from "./sim";
 import { NPCS, bestRoute, npcTurn } from "./npc";
 import { mirrorSim } from "./mirror";
@@ -195,7 +195,7 @@ export default function App() {
             <thead><tr><th>Good</th><th>Stock</th><th>Demand</th><th>Buy {qty}</th><th>Sell {qty}</th><th>You hold</th><th></th></tr></thead>
             <tbody>
               {snap.quotes.map((q, g) => {
-                const d = demand(snap.day, me.town, g);
+                const d = q.demand_pct; // the contract's demand at the moment of the quote, consistent with q.stock
                 const cost = buyCost(g, q.stock, d, qty);
                 const rev = sellRevenue(g, q.stock, d, qty);
                 const full = cartUnits(me) + qty > CART_CAPACITY;

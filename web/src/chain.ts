@@ -123,8 +123,9 @@ export async function loadState(me: string | null, cfg: Config): Promise<ChainSt
     view<[string, Player][]>("get_players", { from_index: 0, limit: 50 }),
   ]);
   const mine = me ? players.find(([id]) => id === me)?.[1] ?? null : null;
-  const stakesAll = await stakesFor(players.map(([id]) => id), me, day);
+  // Quotes right after the player list, so they come from the same game day as `day` whenever possible.
   const quotes = await view<Quote[]>("quotes", { town: mine?.town ?? 0 });
+  const stakesAll = await stakesFor(players.map(([id]) => id), me, day);
   const board = players.map(([id, p], i) => ({ id, worth: worthOf(p, stakesAll[i], merchants, day), bankruptcies: p.bankruptcies }));
   const myIdx = players.findIndex(([id]) => id === me);
   return { day, config: cfg, me: mine, stakes: myIdx >= 0 ? stakesAll[myIdx] : [[0, 0], [0, 0], [0, 0]], merchants, quotes, board };
