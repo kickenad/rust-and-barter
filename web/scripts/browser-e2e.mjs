@@ -28,7 +28,7 @@ await click("Buy"); await waitText(/Bought 5 grain/); step("testnet buy (signed 
 await waitText(/Cart 5\/15/, 20000); step("cart 5/15 from chain");
 await click("Ironhold"); await waitText(/You set off for Ironhold/); await waitText(/On the road to Ironhold/, 20000); step("testnet travel, on the road");
 await p.screenshot({ path: `${shots}/testnet-road.png` });
-await waitText(/Market in Ironhold(?![\s\S]*On the road)/, 60000);
+await p.waitForFunction(() => /Market in Ironhold/i.test(document.body.innerText) && !/On the road to/i.test(document.body.innerText), { timeout: 90000, polling: 500 });
 await p.waitForFunction(() => [...document.querySelectorAll("button")].some((x) => x.innerText === "Sell" && !x.disabled), { timeout: 60000, polling: 500 });
 await click("Sell"); await waitText(/Sold 5 grain/); step("testnet sell after arrival");
 await new Promise((r) => setTimeout(r, 7000));

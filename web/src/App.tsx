@@ -94,7 +94,14 @@ export default function App() {
     if (!player) return;
     setBusy(true); setMsg({ text: `Signing ${method} on testnet…` });
     try {
-      const { result, hash } = await player.call<{ coins: number }>(method, chainArgs ?? args);
+      const send = () => player.call<{ coins: number }>(method, chainArgs ?? args);
+      // Right at a day change an RPC node can report the new day a moment before the block that runs our
+      // transaction does; if the UI already showed you as arrived, wait a few seconds and try once more.
+      const { result, hash } = await send().catch(async (e: Error) => {
+        if (!/still on the road/.test(e.message) || onRoad) throw e;
+        setMsg({ text: "Arriving… retrying in a few seconds." }); await new Promise((r) => setTimeout(r, 4000));
+        return send();
+      });
       const text = chainDone && result ? chainDone(result) : done;
       setMsg({ text, href: txUrl(hash) });
       setTxLog((l) => [{ day: chain?.day ?? 0, text, href: txUrl(hash) }, ...l].slice(0, 12));
