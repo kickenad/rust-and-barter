@@ -2,11 +2,13 @@
 
 A small merchant-trading game whose world lives in a NEAR smart contract. There are three towns and four goods. Prices move with each merchant's stock and with daily demand, so buying low in one town and selling high in another is the whole game. Players can also invest in a town's merchant and earn a share of its trading spread. Rival NPC traders work the same roads.
 
-**Live on NEAR testnet:** [`rustbarter-8562c6.testnet`](https://testnet.nearblocks.io/address/rustbarter-8562c6.testnet) (game day = 30 seconds).
+**Play it now:** https://kickenad.github.io/rust-and-barter/ (practice) · https://kickenad.github.io/rust-and-barter/#testnet (live on testnet, no wallet needed; the page makes a free throwaway testnet guest account).
+
+**Contract on NEAR testnet:** [`rustbarter-8562c6.testnet`](https://testnet.nearblocks.io/address/rustbarter-8562c6.testnet) (game day = 30 seconds).
 
 **Testnet only.** Coins and goods are game points with no real-world value. They can't be bought, sold or withdrawn, and there is no wagering.
 
-Entry to the NEAR hackathon (games track). Per hackathon rule Q-015, our other (and only other) entry is **Usage vs Price**, a reproducible on-chain data thesis (thesis track): repo link TBD.
+Entry to the NEAR hackathon (games track). Per hackathon rule Q-015, our other (and only other) entry is **Usage vs Price**, a reproducible on-chain data thesis (thesis track): https://github.com/kickenad/near-usage-vs-price, live page https://kickenad.github.io/near-usage-vs-price/.
 
 ## What's on-chain
 
