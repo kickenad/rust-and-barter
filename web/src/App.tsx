@@ -75,8 +75,10 @@ export default function App() {
   const secs = cfg ? secondsToNextDay(cfg, now) : 0;
 
   // ---- actions ----
-  type Act = { practice: () => unknown; method: string; args?: Record<string, unknown>; done: string };
-  const act = async ({ practice, method, args = {}, done }: Act) => {
+  // On testnet, other players and NPCs trade between your click and the block, so buy/sell allow 5% slippage
+  // and the message reports the price actually paid (from the returned player).
+  type Act = { practice: () => unknown; method: string; args?: Record<string, unknown>; done: string; chainArgs?: Record<string, unknown>; chainDone?: (p: { coins: number }) => string };
+  const act = async ({ practice, method, args = {}, done, chainArgs, chainDone }: Act) => {
     if (mode === "practice") {
       try { practice(); setMsg({ text: done }); } catch (e) { setMsg({ text: (e as Error).message }); }
       return rerender();
@@ -84,9 +86,10 @@ export default function App() {
     if (!player) return;
     setBusy(true); setMsg({ text: `Signing ${method} on testnet…` });
     try {
-      const { hash } = await player.call(method, args);
-      setMsg({ text: done, href: txUrl(hash) });
-      setTxLog((l) => [{ day: chain?.day ?? 0, text: done, href: txUrl(hash) }, ...l].slice(0, 12));
+      const { result, hash } = await player.call<{ coins: number }>(method, chainArgs ?? args);
+      const text = chainDone && result ? chainDone(result) : done;
+      setMsg({ text, href: txUrl(hash) });
+      setTxLog((l) => [{ day: chain?.day ?? 0, text, href: txUrl(hash) }, ...l].slice(0, 12));
     } catch (e) { setMsg({ text: (e as Error).message }); }
     setBusy(false); refresh();
   };
@@ -181,9 +184,9 @@ export default function App() {
                     <td>{cost === null ? "—" : fmt(cost)}</td><td>{fmt(rev)}</td><td>{me.goods[g]}</td>
                     <td className="btns">
                       <button title={full ? "cart full" : ""} disabled={busy || onRoad || full || cost === null || cost > me.coins}
-                        onClick={() => act({ practice: () => sim.buy(ME, q.good, qty, cost!), method: "buy", args: { good: q.good, qty, max_total: cost }, done: `Bought ${qty} ${q.good} for ${cost}.` })}>Buy</button>
+                        onClick={() => act({ practice: () => sim.buy(ME, q.good, qty, cost!), method: "buy", args: { good: q.good, qty, max_total: cost }, done: `Bought ${qty} ${q.good} for ${cost}.`, chainArgs: { good: q.good, qty, max_total: Math.ceil(cost! * 1.05) }, chainDone: (r) => `Bought ${qty} ${q.good} for ${me.coins - r.coins}.` })}>Buy</button>
                       <button disabled={busy || onRoad || me.goods[g] < qty}
-                        onClick={() => act({ practice: () => sim.sell(ME, q.good, qty, rev), method: "sell", args: { good: q.good, qty, min_total: rev }, done: `Sold ${qty} ${q.good} for ${rev}.` })}>Sell</button>
+                        onClick={() => act({ practice: () => sim.sell(ME, q.good, qty, rev), method: "sell", args: { good: q.good, qty, min_total: rev }, done: `Sold ${qty} ${q.good} for ${rev}.`, chainArgs: { good: q.good, qty, min_total: Math.floor(rev * 0.95) }, chainDone: (r) => `Sold ${qty} ${q.good} for ${r.coins - me.coins}.` })}>Sell</button>
                     </td>
                   </tr>
                 );

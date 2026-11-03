@@ -1,6 +1,7 @@
 import puppeteer from "puppeteer-core";
 // Needs: npm i -D puppeteer-core (or run from a folder that has it) and a Chrome at $CHROME.
-// Start `npm run build && npx vite preview --port 4173` first.
+// Start `npm run build && npx vite preview --port 4173` first, or set URL=https://kickenad.github.io/rust-and-barter/ to test the live site.
+const URL_ = process.env.URL ?? "http://localhost:4173/";
 const shots = process.env.SHOTS ?? "/tmp";
 const b = await puppeteer.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"], headless: true });
 const p = await b.newPage(); await p.setViewport({ width: 1100, height: 1300 });
@@ -12,14 +13,14 @@ const step = (s) => console.log("ok -", s);
 process.on("unhandledRejection", async (e) => { console.log("FAIL", e.message); console.log((await text()).slice(0, 1500)); console.log("errors:", errs); await p.screenshot({ path: `${shots}/fail.png` }); await b.close(); process.exit(1); });
 
 // practice
-await p.goto("http://localhost:4173/");
+await p.goto(URL_);
 await waitText(/Market in Millbrook/); await click("Buy"); await waitText(/Bought 5 grain/); step("practice buy");
 await click("Ironhold"); await waitText(/On the road to Ironhold/); step("practice travel shows on-the-road");
 await click("End day"); await waitText(/Market in Ironhold/); await click("Sell"); await waitText(/Sold 5 grain/); step("practice sell after a day");
 await p.screenshot({ path: `${shots}/practice.png` });
 
 // testnet
-await p.goto("http://localhost:4173/#testnet"); await p.reload();
+await p.goto(URL_ + "#testnet"); await p.reload();
 await waitText(/Create throwaway account/); await click("Create throwaway account");
 await waitText(/Playing as rb-player-/); await waitText(/Market in Millbrook/, 60000); step("guest account created via faucet + joined");
 await waitText(/Leaderboard \(on chain\)[\s\S]*You ·/, 30000); step("on-chain leaderboard shows you");
