@@ -38,7 +38,7 @@ export async function viewAt<T>(method: string, args: Record<string, unknown> = 
     try {
       const at = height === undefined ? { finality: "optimistic" } : { block_id: height };
       const res = await fetch(url, {
-        method: "POST", headers: { "content-type": "application/json" },
+        method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(6000),
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "call_function", ...at, account_id: CONTRACT, method_name: method, args_base64: b64(JSON.stringify(args)) } }),
       });
       if (!res.ok) throw new Error(`RPC ${res.status}`);
@@ -116,41 +116,55 @@ export async function createGuestAccount(prefix = "rb-player"): Promise<{ accoun
 /** Everything the UI needs in one round of parallel views. */
 // Other players' stakes only matter for leaderboard net worth, so fetch them at most once per game day,
 // a few at a time, to stay under public RPC rate limits. Your own stakes are fetched on every refresh.
-const stakeCache = new Map<string, { day: number; s: [number, number][] }>();
-async function stakesFor(ids: string[], day: number): Promise<[number, number][][]> {
-  const todo = ids.filter((id) => stakeCache.get(id)?.day !== day);
-  for (let i = 0; i < todo.length; i += 4) {
-    const chunk = todo.slice(i, i + 4);
+// Other players' stakes only change when they invest or divest, and only feed the leaderboard, so they are
+// re-read at most every few minutes. Your own stakes are read on every refresh.
+const STAKE_TTL_MS = 5 * 60_000;
+const stakeCache = new Map<string, { at: number; s: [number, number][] }>();
+async function stakesFor(ids: string[]): Promise<[number, number][][]> {
+  const todo = ids.filter((id) => Date.now() - (stakeCache.get(id)?.at ?? 0) > STAKE_TTL_MS);
+  for (let i = 0; i < todo.length; i += 3) {
+    const chunk = todo.slice(i, i + 3);
     const got = await Promise.all(chunk.map((id) => view<[number, number][]>("get_stakes", { account_id: id }).catch(() => null)));
-    chunk.forEach((id, k) => { if (got[k]) stakeCache.set(id, { day, s: got[k]! }); });
+    chunk.forEach((id, k) => { if (got[k]) stakeCache.set(id, { at: Date.now(), s: got[k]! }); });
   }
   return ids.map((id) => stakeCache.get(id)?.s ?? [[0, 0], [0, 0], [0, 0]]);
 }
 
-async function allPlayers(at: <T>(m: string, a?: Record<string, unknown>) => Promise<T>) {
+async function allPlayers() {
   const out: [string, Player][] = [];
   for (let from = 0; from < 500; from += 100) {
-    const page = await at<[string, Player][]>("get_players", { from_index: from, limit: 100 });
+    const page = await view<[string, Player][]>("get_players", { from_index: from, limit: 100 });
     out.push(...page); if (page.length < 100) break;
   }
   return out;
 }
 
+// The leaderboard is the expensive part (every player, plus their stakes). It loads in the background, at most
+// every 45 s, and never holds up the numbers you trade on.
+type BoardRow = { id: string; worth: number; bankruptcies: number };
+let boardCache: { at: number; players: [string, Player][]; stakes: [number, number][][] } | null = null;
+let boardLoading: Promise<void> | null = null;
+function refreshBoard(force = false) {
+  if (boardLoading || (!force && boardCache && Date.now() - boardCache.at < 45_000)) return;
+  boardLoading = (async () => {
+    const players = await allPlayers();
+    boardCache = { at: Date.now(), players, stakes: await stakesFor(players.map(([id]) => id)) };
+  })().catch(() => {}).finally(() => { boardLoading = null; });
+}
+
 export async function loadState(me: string | null, cfg: Config): Promise<ChainState> {
-  // Everything below is read at one block height, so the screen is a consistent snapshot.
+  // Everything the trade panel shows is read at one block height, so it is a consistent snapshot.
   const { value: day, height } = await viewAt<number>("day");
   const at = <T,>(m: string, a: Record<string, unknown> = {}) => viewAt<T>(m, a, height).then((r) => r.value);
-  const [merchants, players, mine] = await Promise.all([
+  const mine = me ? await at<Player | null>("get_player", { account_id: me }) : null;
+  const [merchants, quotes, myStakes] = await Promise.all([
     Promise.all([0, 1, 2].map((town) => at<Merchant>("get_merchant", { town }))),
-    allPlayers(at),
-    me ? at<Player | null>("get_player", { account_id: me }) : Promise.resolve(null),
-  ]);
-  const [quotes, myStakes] = await Promise.all([
     at<Quote[]>("quotes", { town: mine?.town ?? 0 }),
-    me ? at<[number, number][]>("get_stakes", { account_id: me }) : Promise.resolve(null),
+    me && mine ? at<[number, number][]>("get_stakes", { account_id: me }) : Promise.resolve(null),
   ]);
-  if (me && myStakes) stakeCache.set(me, { day, s: myStakes });
-  const stakesAll = await stakesFor(players.map(([id]) => id), day);
-  const board = players.map(([id, p], i) => ({ id, worth: worthOf(p, stakesAll[i], merchants, day), bankruptcies: p.bankruptcies }));
+  refreshBoard(!!me && !!mine && !boardCache?.players.some(([id]) => id === me));
+  const rows: BoardRow[] = (boardCache?.players ?? []).map(([id, p], i) => ({ id, worth: worthOf(p, boardCache!.stakes[i], merchants, day), bankruptcies: p.bankruptcies }));
+  const board = rows.filter((r) => r.id !== me);
+  if (me && mine) board.push({ id: me, worth: worthOf(mine, myStakes ?? [[0, 0], [0, 0], [0, 0]], merchants, day), bankruptcies: mine.bankruptcies });
   return { height, day, config: cfg, me: mine, stakes: myStakes ?? [[0, 0], [0, 0], [0, 0]], merchants, quotes, board };
 }
