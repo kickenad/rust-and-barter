@@ -60,6 +60,11 @@ export function secondsToNextDay(cfg: Config, nowMs = Date.now()) {
   return Math.max(0, Math.ceil((dayMs - ((nowMs - gen) % dayMs)) / 1000));
 }
 
+/** The game day by the local clock (the contract uses the block timestamp, which tracks real time closely). */
+export function localDay(cfg: Config, nowMs = Date.now()) {
+  return Math.floor((nowMs - Number(cfg.genesis_ns) / 1e6) / (Number(cfg.day_ns) / 1e6));
+}
+
 /** A signer for one account. Secret key never leaves this object except via exportSecret(). */
 export class ChainPlayer {
   readonly account: Account;

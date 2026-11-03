@@ -3,7 +3,7 @@ import { CART_CAPACITY, GOODS, TOWNS, TRAVEL_COST, buyCost, demand, fmt, sellRev
 import { Sim, type Player, type Quote } from "./sim";
 import { NPCS, bestRoute, npcTurn } from "./npc";
 import { mirrorSim } from "./mirror";
-import { CONTRACT, ChainPlayer, accountUrl, createGuestAccount, getConfig, loadState, secondsToNextDay, txUrl, view, type ChainState, type Config } from "./chain";
+import { CONTRACT, ChainPlayer, accountUrl, createGuestAccount, getConfig, loadState, localDay, secondsToNextDay, txUrl, view, type ChainState, type Config } from "./chain";
 
 const ME = "you";
 const ICON: Record<string, string> = { grain: "🌾", iron: "⛏️", cloth: "🧵", spice: "🌶️" };
@@ -73,12 +73,14 @@ export default function App() {
   const me = snap.me;
   const onRoad = !!me && snap.day < me.arrives_day;
   const secs = cfg ? secondsToNextDay(cfg, now) : 0;
-  // When a new game day starts, merchants restock and prices move: refresh at once instead of waiting for the poll.
-  const prevSecs = useRef(secs);
+  // When a new game day starts, merchants restock and prices move. Refresh at once (and again until the chain
+  // shows the new day), and pause trading around the change so a click never signs yesterday's price.
+  const today = cfg ? localDay(cfg, now) : 0;
+  const dayStale = mode === "testnet" && !!chain && !!cfg && (chain.day < today || secs <= 2);
   useEffect(() => {
-    if (mode === "testnet" && secs > prevSecs.current) { const t = setTimeout(refresh, 1500); prevSecs.current = secs; return () => clearTimeout(t); }
-    prevSecs.current = secs;
-  }, [secs, mode, refresh]);
+    if (mode !== "testnet" || !chain || !cfg || chain.day >= today) return;
+    const t = setTimeout(refresh, 1500); return () => clearTimeout(t);
+  }, [today, chain, cfg, mode, refresh]);
 
   // ---- actions ----
   // On testnet, other players and NPCs trade between your click and the block, so buy/sell allow 5% slippage
@@ -163,7 +165,7 @@ export default function App() {
           <div><span>Cart {cartUnits(me)}/{CART_CAPACITY}</span><b>{me.goods.map((n, g) => (n ? `${ICON[GOODS[g]]}${n}` : "")).filter(Boolean).join(" ") || "empty"}</b></div>
           {mode === "practice"
             ? <button className="primary" onClick={endDay}>End day ☀️</button>
-            : <div className="clock"><span>Next day in</span><b>{secs}s</b></div>}
+            : <div className="clock"><span>Next day in</span><b>{dayStale ? "new day…" : `${secs}s`}</b></div>}
         </section>
         {msg && <p className="msg">{msg.text} {msg.href && <a href={msg.href} target="_blank">view transaction ↗</a>}</p>}
         {onRoad && <p className="road">🐴 On the road to {TOWNS[me.town]}. You arrive on day {me.arrives_day}{mode === "practice" ? " (end the day)." : ` (in about ${secs}s).`}</p>}
@@ -195,9 +197,9 @@ export default function App() {
                     <td>{ICON[q.good]} {q.good}</td><td>{q.stock}</td><td>{q.demand_pct}%</td>
                     <td>{cost === null ? "—" : fmt(cost)}</td><td>{fmt(rev)}</td><td>{me.goods[g]}</td>
                     <td className="btns">
-                      <button title={full ? "cart full" : ""} disabled={busy || onRoad || full || cost === null || cost > me.coins}
+                      <button title={full ? "cart full" : ""} disabled={busy || dayStale || onRoad || full || cost === null || cost > me.coins}
                         onClick={() => act({ practice: () => sim.buy(ME, q.good, qty, cost!), method: "buy", args: { good: q.good, qty, max_total: cost }, done: `Bought ${qty} ${q.good} for ${cost}.`, chainArgs: { good: q.good, qty, max_total: Math.ceil(cost! * 1.05) }, chainDone: (r) => `Bought ${qty} ${q.good} for ${me.coins - r.coins}.` })}>Buy</button>
-                      <button disabled={busy || onRoad || me.goods[g] < qty}
+                      <button disabled={busy || dayStale || onRoad || me.goods[g] < qty}
                         onClick={() => act({ practice: () => sim.sell(ME, q.good, qty, rev), method: "sell", args: { good: q.good, qty, min_total: rev }, done: `Sold ${qty} ${q.good} for ${rev}.`, chainArgs: { good: q.good, qty, min_total: Math.floor(rev * 0.95) }, chainDone: (r) => `Sold ${qty} ${q.good} for ${r.coins - me.coins}.` })}>Sell</button>
                     </td>
                   </tr>

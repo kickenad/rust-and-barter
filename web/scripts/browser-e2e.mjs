@@ -8,7 +8,7 @@ const p = await b.newPage(); await p.setViewport({ width: 1100, height: 1300 });
 const errs = []; p.on("pageerror", (e) => errs.push(e.message)); p.on("console", (m) => m.type() === "error" && errs.push(m.text()));
 const text = () => p.evaluate(() => document.body.innerText);
 const waitText = async (re, ms = 90000) => { try { await p.waitForFunction((s) => new RegExp(s, "i").test(document.body.innerText), { timeout: ms, polling: 500 }, re.source); } catch (e) { console.log("FAIL waiting for", re.source); console.log((await text()).slice(0, 1500)); console.log("errors:", errs); await p.screenshot({ path: `${shots}/fail.png` }); await b.close(); process.exit(1); } };
-const click = (label, nth = 0) => p.evaluate((l, n) => { const bs = [...document.querySelectorAll("button")].filter((x) => x.innerText.trim().startsWith(l) && !x.disabled); bs[n].click(); return bs.length; }, label, nth);
+const click = async (label, nth = 0) => { await p.waitForFunction((l, n) => [...document.querySelectorAll("button")].filter((x) => x.innerText.trim().startsWith(l) && !x.disabled).length > n, { timeout: 60000, polling: 300 }, label, nth); return p.evaluate((l, n) => { const bs = [...document.querySelectorAll("button")].filter((x) => x.innerText.trim().startsWith(l) && !x.disabled); bs[n].click(); return bs.length; }, label, nth); };
 const step = (s) => console.log("ok -", s);
 process.on("unhandledRejection", async (e) => { console.log("FAIL", e.message); console.log((await text()).slice(0, 1500)); console.log("errors:", errs); await p.screenshot({ path: `${shots}/fail.png` }); await b.close(); process.exit(1); });
 
