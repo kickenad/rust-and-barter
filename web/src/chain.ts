@@ -22,7 +22,9 @@ const RPCS = [RPC, ...["https://rpc.testnet.fastnear.com", "https://rpc.testnet.
 let rpcIdx = 0;
 export async function view<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
   let lastErr: unknown;
-  for (let attempt = 0; attempt < RPCS.length; attempt++) {
+  // Two passes over the RPC list, with a short pause between passes (rate limits reset quickly).
+  for (let attempt = 0; attempt < RPCS.length * 2; attempt++) {
+    if (attempt === RPCS.length) await new Promise((r) => setTimeout(r, 1500));
     const url = RPCS[rpcIdx % RPCS.length];
     let j;
     try {
@@ -96,6 +98,19 @@ export async function createGuestAccount(prefix = "rb-player"): Promise<{ accoun
 }
 
 /** Everything the UI needs in one round of parallel views. */
+// Other players' stakes only matter for leaderboard net worth, so fetch them at most once per game day,
+// a few at a time, to stay under public RPC rate limits. Your own stakes are fetched on every refresh.
+const stakeCache = new Map<string, { day: number; s: [number, number][] }>();
+async function stakesFor(ids: string[], me: string | null, day: number): Promise<[number, number][][]> {
+  const todo = ids.filter((id) => id === me || stakeCache.get(id)?.day !== day);
+  for (let i = 0; i < todo.length; i += 4) {
+    const chunk = todo.slice(i, i + 4);
+    const got = await Promise.all(chunk.map((id) => view<[number, number][]>("get_stakes", { account_id: id }).catch(() => null)));
+    chunk.forEach((id, k) => { if (got[k]) stakeCache.set(id, { day, s: got[k]! }); });
+  }
+  return ids.map((id) => stakeCache.get(id)?.s ?? [[0, 0], [0, 0], [0, 0]]);
+}
+
 export async function loadState(me: string | null, cfg: Config): Promise<ChainState> {
   const [day, merchants, players] = await Promise.all([
     view<number>("day"),
@@ -103,7 +118,7 @@ export async function loadState(me: string | null, cfg: Config): Promise<ChainSt
     view<[string, Player][]>("get_players", { from_index: 0, limit: 50 }),
   ]);
   const mine = me ? players.find(([id]) => id === me)?.[1] ?? null : null;
-  const stakesAll = await Promise.all(players.map(([id]) => view<[number, number][]>("get_stakes", { account_id: id })));
+  const stakesAll = await stakesFor(players.map(([id]) => id), me, day);
   const quotes = await view<Quote[]>("quotes", { town: mine?.town ?? 0 });
   const board = players.map(([id, p], i) => ({ id, worth: worthOf(p, stakesAll[i], merchants, day), bankruptcies: p.bankruptcies }));
   const myIdx = players.findIndex(([id]) => id === me);

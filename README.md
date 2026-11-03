@@ -65,6 +65,9 @@ npm ci && npm test && npm run dev    # open http://localhost:5173 (add #testnet 
 npx tsx scripts/e2e-testnet.ts
 # headless browser run of both modes (needs puppeteer-core and Chrome; serve with `npx vite preview --port 4173`)
 node scripts/browser-e2e.mjs
+URL=https://kickenad.github.io/rust-and-barter/ node scripts/browser-e2e.mjs   # same, against the live site
+# publish to GitHub Pages (pushes a new commit to the gh-pages branch)
+scripts/publish-pages.sh
 ```
 
 Deploy your own copy: `cargo near build non-reproducible-wasm`, then `near contract deploy <account> use-file target/near/rust_and_barter.wasm with-init-call new json-args '{"day_seconds":30}' ...`, and set `VITE_CONTRACT=<account>` for the web client.

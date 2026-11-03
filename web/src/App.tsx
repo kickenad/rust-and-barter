@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { useRef, useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { CART_CAPACITY, GOODS, TOWNS, TRAVEL_COST, buyCost, demand, fmt, sellRevenue } from "./pricing";
 import { Sim, type Player, type Quote } from "./sim";
 import { NPCS, bestRoute, npcTurn } from "./npc";
@@ -73,6 +73,12 @@ export default function App() {
   const me = snap.me;
   const onRoad = !!me && snap.day < me.arrives_day;
   const secs = cfg ? secondsToNextDay(cfg, now) : 0;
+  // When a new game day starts, merchants restock and prices move: refresh at once instead of waiting for the poll.
+  const prevSecs = useRef(secs);
+  useEffect(() => {
+    if (mode === "testnet" && secs > prevSecs.current) { const t = setTimeout(refresh, 1500); prevSecs.current = secs; return () => clearTimeout(t); }
+    prevSecs.current = secs;
+  }, [secs, mode, refresh]);
 
   // ---- actions ----
   // On testnet, other players and NPCs trade between your click and the block, so buy/sell allow 5% slippage
@@ -90,7 +96,10 @@ export default function App() {
       const text = chainDone && result ? chainDone(result) : done;
       setMsg({ text, href: txUrl(hash) });
       setTxLog((l) => [{ day: chain?.day ?? 0, text, href: txUrl(hash) }, ...l].slice(0, 12));
-    } catch (e) { setMsg({ text: (e as Error).message }); }
+    } catch (e) {
+      const m = (e as Error).message;
+      setMsg({ text: /price moved/.test(m) ? `${m}: prices changed before your transaction landed (often a new day). Prices are updated; check them and try again.` : m });
+    }
     setBusy(false); refresh();
   };
   const endDay = () => act({ practice: () => { for (let i = 0; i < 2; i++) for (const n of NPCS) npcTurn(sim, n); sim.advance(1); }, method: "", done: "A new day. Merchants restocked and prices shifted." });
@@ -105,7 +114,10 @@ export default function App() {
       const day = await view<number>("day");
       setMsg({ text: `You opened a stall in Millbrook as ${g.accountId}.`, href: txUrl(hash) });
       setTxLog([{ day, text: "You opened a stall in Millbrook.", href: txUrl(hash) }]);
-    } catch (e) { setMsg({ text: (e as Error).message }); }
+    } catch (e) {
+      const m = (e as Error).message;
+      setMsg({ text: /price moved/.test(m) ? `${m}: prices changed before your transaction landed (often a new day). Prices are updated; check them and try again.` : m });
+    }
     setBusy(false); refresh();
   };
   const forgetGuest = () => { if (!confirm("Forget this throwaway testnet account? Its key is only stored in this browser.")) return; localStorage.removeItem(GUEST_KEY); setGuest(null); setChain(null); setTxLog([]); };
